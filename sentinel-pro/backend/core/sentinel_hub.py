@@ -1,6 +1,7 @@
 import socketio
 import asyncio
 import time
+import json
 from engine.shared_state import state
 from .serial_bridge import ArduinoBridge
 from backend.api.deps import AsyncSessionLocal
@@ -17,6 +18,11 @@ class SentinelHub:
         print("[Hub] Monitor Loop Started")
         while True:
             snapshot = state.get_snapshot()
+            
+            # Anomaly Alert Logic (Compare current vs 5-min average)
+            # This is a simplified version; real logic would query DB for average
+            # For now, we compare against a static threshold or a simple running average if we had one.
+            # Let's assume an "Anomaly" if count jumps by > 5 in 1 second (burst) - simpler for now without DB queries in loop
             
             # Risk Logic
             crowd_risk = snapshot['risk_level'] 
@@ -44,7 +50,8 @@ class SentinelHub:
                     log = CrowdLog(
                         person_count=snapshot['people_count'],
                         risk_score=final_risk,
-                        zone_id="main"
+                        zone_id="main",
+                        coordinates=json.dumps(snapshot.get('coordinates', []))
                     )
                     session.add(log)
                     await session.commit()

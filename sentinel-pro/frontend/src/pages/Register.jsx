@@ -1,27 +1,27 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 
-export default function Login() {
+export default function Register() {
     const [username, setUsername] = useState('');
     const [password, setPassword] = useState('');
     const [error, setError] = useState('');
     const navigate = useNavigate();
 
-    const handleLogin = async (e) => {
+    const handleRegister = async (e) => {
         e.preventDefault();
         setError('');
         try {
-            const response = await fetch('http://localhost:8000/api/auth/login', {
+            const response = await fetch('http://localhost:8000/api/auth/register', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ username, password })
             });
             if (response.ok) {
-                const data = await response.json();
-                localStorage.setItem('token', data.token);
-                navigate('/dashboard');
+                // Auto login or redirect to login
+                navigate('/login');
             } else {
-                setError("Invalid credentials");
+                const data = await response.json();
+                setError(data.detail || "Registration failed");
             }
         } catch (err) {
             console.error(err);
@@ -33,11 +33,11 @@ export default function Login() {
         <div className="login-container">
             <div className="login-card">
                 <h1>Sentinel Pro</h1>
-                <p className="subtitle">Secure Crowd Safety System</p>
+                <p className="subtitle">Create New Account</p>
 
                 {error && <div className="error-message">{error}</div>}
 
-                <form onSubmit={handleLogin}>
+                <form onSubmit={handleRegister}>
                     <div className="input-group">
                         <label>Username</label>
                         <input
@@ -58,11 +58,11 @@ export default function Login() {
                             required
                         />
                     </div>
-                    <button type="submit" className="login-btn">Access Dashboard</button>
+                    <button type="submit" className="login-btn">Register</button>
+                    <p style={{ marginTop: '1rem', textAlign: 'center' }}>
+                        <a href="/login" style={{ color: '#646cff' }}>Already have an account? Login</a>
+                    </p>
                 </form>
-                <p style={{ marginTop: '1rem', textAlign: 'center' }}>
-                    <a href="/register" style={{ color: '#646cff' }}>Create Account</a>
-                </p>
             </div>
         </div>
     );

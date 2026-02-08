@@ -2,14 +2,24 @@ import cv2
 import threading
 import time
 import queue
+import os
 from ultralytics import YOLO
 from engine.shared_state import state
 from backend.core.config import YOLO_MODEL, CROWD_DENSITY_HIGH, CROWD_DENSITY_MEDIUM, IMG_SIZE
 
 class VisionEngine(threading.Thread):
-    def __init__(self, source=0):
+    def __init__(self, source=None):
         super().__init__()
-        self.source = source
+        # Use env var if source not provided, parse as int if digit (webcam), else string (RTSP)
+        if source is None:
+            env_source = os.getenv("CAMERA_SOURCE", "0")
+            if env_source.isdigit():
+                self.source = int(env_source)
+            else:
+                self.source = env_source
+        else:
+            self.source = source
+            
         self.running = False
         self.model = None
         self.frame_queue = queue.Queue(maxsize=1) # Keep only latest frame
@@ -84,6 +94,17 @@ class VisionEngine(threading.Thread):
             # Draw Bounding Boxes on the frame
             annotated_frame = results[0].plot()
 
+            # Coordinates for heatmap (centroids)
+            coordinates = []
+            for r in results:
+                for box in r.boxes:
+                    # box.xywh returns center_x, center_y, width, height
+                    x, y, w, h = box.xywh[0].tolist() 
+                    # Normalize coordinates (0-1) for heatmap grid
+                    norm_x = x / frame.shape[1]
+                    norm_y = y / frame.shape[0]
+                    coordinates.append({"x": norm_x, "y": norm_y})
+
             # Determine Status
             if person_count >= CROWD_DENSITY_HIGH:
                 status = "HIGH"
@@ -97,7 +118,7 @@ class VisionEngine(threading.Thread):
             if ret:
                 jpg_bytes = buffer.tobytes()
                 # Update Shared State
-                state.update_vision(jpg_bytes, person_count, status)
+                state.update_vision(jpg_bytes, person_count, status, coordinates)
             
             # Log FPS (Optional)
             # print(f"FPS: ...")

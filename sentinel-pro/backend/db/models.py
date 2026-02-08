@@ -23,6 +23,7 @@ class CrowdLog(Base):
     person_count = Column(Integer, default=0)
     risk_score = Column(String, default="LOW")
     zone_id = Column(String, default="default")
+    coordinates = Column(String, nullable=True) # JSON string of coordinates
 
     incidents = relationship("Incident", back_populates="crowd_log")
 
