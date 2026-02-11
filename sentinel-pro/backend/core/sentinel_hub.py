@@ -13,6 +13,35 @@ class SentinelHub:
         self.app = socketio.ASGIApp(self.sio)
         self.arduino = ArduinoBridge()
         self.last_log_time = time.time()
+        
+        # Engines (Lazy loaded or init here)
+        from engine.vision.vision_module import VisionEngine
+        from engine.audio.audio_module import AudioEngine
+        
+        self.vision_engine = VisionEngine(source=None) # Use env var or default to 0
+        self.audio_engine = AudioEngine()
+
+    def start_engines(self):
+        print("[Hub] Starting Engines...")
+        if not self.vision_engine.is_alive():
+            self.vision_engine.start()
+        if not self.audio_engine.is_alive():
+            self.audio_engine.start()
+
+    def stop_engines(self):
+        print("[Hub] Stopping Engines...")
+        if self.vision_engine:
+            self.vision_engine.stop()
+            self.vision_engine.join()
+        if self.audio_engine:
+            self.audio_engine.stop()
+            self.audio_engine.join()
+
+    def update_homography_matrix(self, matrix):
+        """Update vision engine with new homography matrix"""
+        if self.vision_engine:
+            self.vision_engine.set_homography(matrix)
+            print("[Hub] Homography updated in Vision Engine")
 
     async def monitor_loop(self):
         print("[Hub] Monitor Loop Started")

@@ -10,28 +10,22 @@ from fastapi.middleware.cors import CORSMiddleware
 # Add sys path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from backend.api import auth, dashboard, analytics
+from backend.api import auth, dashboard, analytics, system
 from backend.core.sentinel_hub import hub
 from engine.vision.vision_module import VisionEngine
 from engine.audio.audio_module import AudioEngine
 
 # Global Engines
-vision_thread = None
-audio_thread = None
+# Global Engines
+# Engines are now managed by SentinelHub
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Startup
     print("--- Sentinel-Pro Backend Starting ---")
-    global vision_thread, audio_thread
     
-    # Start Vision
-    vision_thread = VisionEngine(source=0)
-    vision_thread.start()
-    
-    # Start Audio
-    audio_thread = AudioEngine()
-    audio_thread.start()
+    # Start Hub (Engines)
+    hub.start_engines()
     
     # Start Keep-Alive / Monitor Loop
     asyncio.create_task(hub.monitor_loop())
@@ -40,12 +34,7 @@ async def lifespan(app: FastAPI):
     
     # Shutdown
     print("--- Sentinel-Pro Backend Stopping ---")
-    if vision_thread:
-        vision_thread.stop()
-        vision_thread.join()
-    if audio_thread:
-        audio_thread.stop()
-        audio_thread.join()
+    hub.stop_engines()
 
 app = FastAPI(title="Sentinel Pro", lifespan=lifespan)
 
@@ -72,6 +61,7 @@ app_sio = socketio.ASGIApp(hub.sio, app)
 app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
+app.include_router(system.router, prefix="/api/system", tags=["System"])
 
 @app.get("/")
 def health_check():

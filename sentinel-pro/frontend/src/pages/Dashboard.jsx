@@ -2,6 +2,7 @@ import React, { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import HeatmapFn from '../components/Heatmap';
+import TrendAnalysisChart from '../components/TrendAnalysisChart';
 import PeakHourChart from '../components/PeakHourChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 
@@ -18,6 +19,7 @@ function DashboardContent() {
     });
     const [logs, setLogs] = useState([]);
     const [peakHourData, setPeakHourData] = useState([]);
+    const [trendData, setTrendData] = useState([]);
     const [heatmapData, setHeatmapData] = useState(new Array(10).fill(0).map(() => new Array(10).fill(0)));
     const [anomalyAlert, setAnomalyAlert] = useState(null);
 
@@ -70,15 +72,25 @@ function DashboardContent() {
     const fetchLogs = async () => {
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:8000/api/dashboard/logs', {
+            const resLogs = await fetch('http://localhost:8000/api/dashboard/logs', {
                 headers: { 'Authorization': `Bearer ${token}` }
             });
-            if (res.ok) {
-                const data = await res.json();
+            if (resLogs.ok) {
+                const data = await resLogs.json();
                 setLogs(data);
             }
+
+            // Also fetch trend data periodically
+            const resTrend = await fetch('http://localhost:8000/api/analytics/trend?window_size=5', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+            if (resTrend.ok) {
+                const data = await resTrend.json();
+                setTrendData(data);
+            }
+
         } catch (e) {
-            console.error("Failed to fetch logs", e);
+            console.error("Failed to fetch logs/trend", e);
         }
     };
 
@@ -116,20 +128,28 @@ function DashboardContent() {
                 <h2>Sentinel Pro Dashboard</h2>
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
                     <span>Status: <b style={{ color: getRiskColor(metrics.risk_level) }}>{metrics.risk_level}</b></span>
+                    <button onClick={() => navigate('/calibrate')} className="logout-btn" style={{ background: '#3b82f6' }}>Configure</button>
                     <button onClick={handleLogout} className="logout-btn">Logout</button>
                 </div>
             </nav>
 
             <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
-                {/* Left Col: Video */}
-                <div className="card-panel">
-                    <h3 style={{ marginBottom: '1rem' }}>Live Surveillance Feed</h3>
-                    <div className="video-container" style={{ overflow: 'hidden', borderRadius: '0.5rem', border: '1px solid #334155', background: '#000' }}>
-                        <img
-                            src="http://localhost:8000/api/dashboard/vision/stream"
-                            alt="Live Feed"
-                            style={{ width: '100%', height: 'auto', display: 'block', minHeight: '300px' }}
-                        />
+                {/* Left Col: Video & Trend */}
+                <div className="left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                    <div className="card-panel">
+                        <h3 style={{ marginBottom: '1rem' }}>Live Surveillance Feed</h3>
+                        <div className="video-container" style={{ overflow: 'hidden', borderRadius: '0.5rem', border: '1px solid #334155', background: '#000' }}>
+                            <img
+                                src="http://localhost:8000/api/dashboard/vision/stream"
+                                alt="Live Feed"
+                                style={{ width: '100%', height: 'auto', display: 'block', minHeight: '300px' }}
+                            />
+                        </div>
+                    </div>
+
+                    <div className="card-panel" style={{ background: '#1e293b', padding: '1rem', borderRadius: '0.5rem' }}>
+                        <h3 style={{ marginBottom: '1rem', color: '#94a3b8' }}>Crowd Trend Analysis (Live)</h3>
+                        <TrendAnalysisChart data={trendData} />
                     </div>
                 </div>
 
@@ -168,6 +188,7 @@ function DashboardContent() {
                         <h4 style={{ margin: '0 0 0.5rem 0', color: '#94a3b8' }}>Peak Hour Traffic</h4>
                         <PeakHourChart data={peakHourData} />
                     </div>
+
 
                     <div className="logs-panel" style={{ background: '#1e293b', padding: '1rem', borderRadius: '0.5rem', flexGrow: 1 }}>
                         <h4 style={{ margin: '0 0 0.5rem 0', color: '#94a3b8' }}>Recent Logs</h4>
