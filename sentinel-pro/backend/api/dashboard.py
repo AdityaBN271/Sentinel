@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from fastapi.responses import StreamingResponse
 from engine.shared_state import state
-from backend.api.deps import get_db
+from backend.api.deps import get_db, get_current_user
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from backend.db.models import CrowdLog
@@ -23,11 +23,11 @@ def video_feed():
     return StreamingResponse(generate_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 @router.get("/status")
-def get_status():
+def get_status(current_user = Depends(get_current_user)):
     return state.get_snapshot()
 
 @router.get("/logs")
-async def get_logs(db: AsyncSession = Depends(get_db)):
+async def get_logs(db: AsyncSession = Depends(get_db), current_user = Depends(get_current_user)):
     result = await db.execute(select(CrowdLog).order_by(CrowdLog.timestamp.desc()).limit(50))
     logs = result.scalars().all()
     return logs

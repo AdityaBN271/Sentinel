@@ -111,64 +111,70 @@ class VisionEngine(threading.Thread):
             if frame_counter % 2 != 0:
                 continue
 
-            # Inference
-            results = self.model(frame, verbose=False, classes=[0], imgsz=IMG_SIZE, half=True)
+            try:
+                # Inference
+                results = self.model(frame, verbose=False, classes=[0], imgsz=IMG_SIZE, half=True)
+                
+                person_count = 0
+                
+                for r in results:
+                    person_count = len(r.boxes)
+                
+                # Draw Bounding Boxes on the frame
+                annotated_frame = results[0].plot()
+
+                # Coordinates for heatmap (centroids)
+                coordinates = []
+                for r in results:
+                    for box in r.boxes:
+                        # box.xywh returns center_x, center_y, width, height
+                        x, y, w, h = box.xywh[0].tolist() 
+                        
+                        # Normalize coordinates (0-1) for heatmap grid
+                        norm_x = x / frame.shape[1]
+                        norm_y = y / frame.shape[0]
+                        
+                        coord_enrty = {
+                            "x": norm_x, 
+                            "y": norm_y,
+                            "pixel_x": x,
+                            "pixel_y": y
+                        }
+
+                        # Apply Homography if available
+                        if self.homography_matrix is not None:
+                            # perspectiveTransform expects shape (1, N, 2)
+                            pt = np.array([[[x, y]]], dtype=np.float32)
+                            try:
+                                dst = cv2.perspectiveTransform(pt, self.homography_matrix)
+                                map_x = dst[0][0][0]
+                                map_y = dst[0][0][1]
+                                coord_enrty["map_x"] = float(map_x)
+                                coord_enrty["map_y"] = float(map_y)
+                            except Exception as e:
+                                print(f"Transform Error: {e}")
+
+                        coordinates.append(coord_enrty)
+
+                # Determine Status
+                if person_count >= CROWD_DENSITY_HIGH:
+                    status = "HIGH"
+                elif person_count >= CROWD_DENSITY_MEDIUM:
+                    status = "MEDIUM"
+                else:
+                    status = "LOW"
+
+                # Encode to JPEG for streaming
+                ret, buffer = cv2.imencode('.jpg', annotated_frame)
+                if ret:
+                    jpg_bytes = buffer.tobytes()
+                    # Update Shared State
+                    state.update_vision(jpg_bytes, person_count, status, coordinates)
             
-            person_count = 0
-            
-            for r in results:
-                person_count = len(r.boxes)
-            
-            # Draw Bounding Boxes on the frame
-            annotated_frame = results[0].plot()
-
-            # Coordinates for heatmap (centroids)
-            coordinates = []
-            for r in results:
-                for box in r.boxes:
-                    # box.xywh returns center_x, center_y, width, height
-                    x, y, w, h = box.xywh[0].tolist() 
-                    
-                    # Normalize coordinates (0-1) for heatmap grid
-                    norm_x = x / frame.shape[1]
-                    norm_y = y / frame.shape[0]
-                    
-                    coord_enrty = {
-                        "x": norm_x, 
-                        "y": norm_y,
-                        "pixel_x": x,
-                        "pixel_y": y
-                    }
-
-                    # Apply Homography if available
-                    if self.homography_matrix is not None:
-                        # perspectiveTransform expects shape (1, N, 2)
-                        pt = np.array([[[x, y]]], dtype=np.float32)
-                        try:
-                            dst = cv2.perspectiveTransform(pt, self.homography_matrix)
-                            map_x = dst[0][0][0]
-                            map_y = dst[0][0][1]
-                            coord_enrty["map_x"] = float(map_x)
-                            coord_enrty["map_y"] = float(map_y)
-                        except Exception as e:
-                            print(f"Transform Error: {e}")
-
-                    coordinates.append(coord_enrty)
-
-            # Determine Status
-            if person_count >= CROWD_DENSITY_HIGH:
-                status = "HIGH"
-            elif person_count >= CROWD_DENSITY_MEDIUM:
-                status = "MEDIUM"
-            else:
-                status = "LOW"
-
-            # Encode to JPEG for streaming
-            ret, buffer = cv2.imencode('.jpg', annotated_frame)
-            if ret:
-                jpg_bytes = buffer.tobytes()
-                # Update Shared State
-                state.update_vision(jpg_bytes, person_count, status, coordinates)
+            except Exception as e:
+                print(f"[VisionEngine] Error during inference: {e}")
+                # Continue loop despite error
+                continue
             
             # Log FPS (Optional)
             # print(f"FPS: ...")
