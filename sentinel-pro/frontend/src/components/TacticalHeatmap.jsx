@@ -31,14 +31,18 @@ const TacticalHeatmap = ({ detections, floorPlan }) => {
             const width = containerRef.current.offsetWidth;
             const height = containerRef.current.offsetHeight;
 
-            const points = detections.map(d => ({
+            // Mission V8: Limit to last 50 points for HP Laptop performance
+            const recentDetections = detections.slice(-50);
+
+            // Mission V8: Scale normalized 0.0-1.0 coords to pixel offsets
+            const points = recentDetections.map(d => ({
                 x: Math.floor(d.map_x * width),
                 y: Math.floor(d.map_y * height),
                 value: 1
-            })).filter(p => !isNaN(p.x) && !isNaN(p.y));
+            })).filter(p => !isNaN(p.x) && !isNaN(p.y) && p.x >= 0 && p.y >= 0);
 
             heatmapInstance.current.setData({
-                max: 10,
+                max: 5, // Lower max for better sensitivity with fewer points
                 data: points
             });
         }

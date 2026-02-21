@@ -3,7 +3,7 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Calibrate from './pages/Calibrate';
-import ConfigurationManager from './pages/ConfigurationManager';
+import ConfigurationLibrary from './pages/ConfigurationLibrary';
 import './App.css';
 
 function App() {
@@ -14,7 +14,7 @@ function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/calibrate" element={<Calibrate />} />
-      <Route path="/configurations" element={<ConfigurationManager />} />
+      <Route path="/library" element={<ConfigurationLibrary />} />
       <Route path="/" element={<Navigate to="/login" replace />} />
     </Routes>
   );

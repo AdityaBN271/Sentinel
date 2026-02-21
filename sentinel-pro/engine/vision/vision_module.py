@@ -142,26 +142,45 @@ class VisionEngine(threading.Thread):
                 
                 annotated_frame = results[0].plot()
 
-                # Coordinate Mapping V6
+                # Coordinate Mapping V8: Foot-to-Floor Accuracy
                 coordinates = []
                 for r in results:
                     for box in r.boxes:
-                        x, y, w, h = box.xywh[0].tolist() 
-                        norm_x = x / frame.shape[1]
-                        norm_y = y / frame.shape[0]
+                        # xyxy gives us [x1, y1, x2, y2]
+                        x1, y1, x2, y2 = box.xyxy[0].tolist() 
+                        
+                        # Calculate Bottom-Center (Ground Contact Point)
+                        foot_x = (x1 + x2) / 2
+                        foot_y = y2
+                        
+                        # Normalize relative to source frame
+                        norm_x = foot_x / frame.shape[1]
+                        norm_y = foot_y / frame.shape[0]
                         
                         coord_entry = {
                             "x": norm_x, "y": norm_y,
-                            "pixel_x": x, "pixel_y": y
+                            "pixel_x": foot_x, "pixel_y": foot_y
                         }
 
                         if self.homography_matrix is not None:
+                            # Apply Homography to Foot-to-Floor point
                             pt = np.array([[[norm_x, norm_y]]], dtype=np.float32)
                             try:
                                 dst = cv2.perspectiveTransform(pt, self.homography_matrix)
-                                coord_entry["map_x"] = float(dst[0][0][0])
-                                coord_entry["map_y"] = float(dst[0][0][1])
-                            except Exception:
+                                map_x = float(dst[0][0][0])
+                                map_y = float(dst[0][0][1])
+                                
+                                # Safety: Check if actually on floor plan (0.0 - 1.0)
+                                if 0 <= map_x <= 1 and 0 <= map_y <= 1:
+                                    coord_entry["map_x"] = map_x
+                                    coord_entry["map_y"] = map_y
+                                else:
+                                    # Still log it but maybe flag as out-of-bounds visually
+                                    coord_entry["map_x"] = map_x
+                                    coord_entry["map_y"] = map_y
+                                    coord_entry["out_of_bounds"] = True
+                            except Exception as e:
+                                print(f"[VisionEngine] Mapping Warning: {e}")
                                 pass
 
                         coordinates.append(coord_entry)

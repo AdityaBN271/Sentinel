@@ -117,6 +117,13 @@ async def activate_calibration(id: int, db: AsyncSession = Depends(get_db)):
     cal.is_active = True
     await db.commit()
     
+    # Mission V8: Broadcast activation to swap Dashboard backgrounds
+    await hub.sio.emit('config_activated', {
+        'id': cal.id,
+        'name': cal.name,
+        'points': json.loads(cal.points)
+    })
+    
     hub.update_homography_matrix(json.loads(cal.matrix))
     return {"status": "activated", "name": cal.name}
 

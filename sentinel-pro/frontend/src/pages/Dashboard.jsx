@@ -71,6 +71,13 @@ function DashboardContent() {
             }
         });
 
+        socket.on('config_activated', (data) => {
+            console.log("Configuration Activated:", data.name);
+            setAnomalyAlert(`POV Activated: ${data.name}`);
+            setTimeout(() => setAnomalyAlert(null), 3000);
+            fetchHistoricalHeatmap(); // Refresh heatmap with new context
+        });
+
         // Fetch Logs Initial and interval
         const fetchHistoricalHeatmap = async () => {
             try {
@@ -163,7 +170,7 @@ function DashboardContent() {
                         device={metrics.inference_device}
                     />
                     <span>Status: <b style={{ color: getRiskColor(metrics.risk_level) }}>{metrics.risk_level}</b></span>
-                    <button onClick={() => navigate('/calibrate')} className="logout-btn" style={{ background: '#3b82f6' }}>Configure</button>
+                    <button onClick={() => navigate('/library')} className="logout-btn" style={{ background: '#3b82f6' }}>Library</button>
                     <button onClick={handleLogout} className="logout-btn">Logout</button>
                 </div>
             </nav>
