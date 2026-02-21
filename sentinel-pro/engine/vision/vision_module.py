@@ -3,6 +3,7 @@ import threading
 import time
 import queue
 import os
+import numpy as np
 from ultralytics import YOLO
 from engine.shared_state import state
 from backend.core.config import YOLO_MODEL, CROWD_DENSITY_HIGH, CROWD_DENSITY_MEDIUM, IMG_SIZE
@@ -96,12 +97,21 @@ class VisionEngine(threading.Thread):
         
         frame_counter = 0
         
-        import numpy as np # Ensure numpy is available in scope or global
         
         while self.running:
             try:
-                # Wait for frame (blocking)
-                frame = self.frame_queue.get(timeout=1.0)
+                # ZERO LAG Stratey: Drain queue to get the absolute latest frame
+                frame = None
+                try:
+                    while True:
+                        frame = self.frame_queue.get_nowait()
+                except queue.Empty:
+                    pass
+                
+                # If we didn't get a frame (queue was empty), wait for one
+                if frame is None:
+                    frame = self.frame_queue.get(timeout=1.0)
+
             except queue.Empty:
                 continue
 
@@ -134,7 +144,7 @@ class VisionEngine(threading.Thread):
                         norm_x = x / frame.shape[1]
                         norm_y = y / frame.shape[0]
                         
-                        coord_enrty = {
+                        coord_entry = {
                             "x": norm_x, 
                             "y": norm_y,
                             "pixel_x": x,
@@ -149,12 +159,12 @@ class VisionEngine(threading.Thread):
                                 dst = cv2.perspectiveTransform(pt, self.homography_matrix)
                                 map_x = dst[0][0][0]
                                 map_y = dst[0][0][1]
-                                coord_enrty["map_x"] = float(map_x)
-                                coord_enrty["map_y"] = float(map_y)
+                                coord_entry["map_x"] = float(map_x)
+                                coord_entry["map_y"] = float(map_y)
                             except Exception as e:
                                 print(f"Transform Error: {e}")
 
-                        coordinates.append(coord_enrty)
+                        coordinates.append(coord_entry)
 
                 # Determine Status
                 if person_count >= CROWD_DENSITY_HIGH:
@@ -165,7 +175,9 @@ class VisionEngine(threading.Thread):
                     status = "LOW"
 
                 # Encode to JPEG for streaming
-                ret, buffer = cv2.imencode('.jpg', annotated_frame)
+                # Optimize: Quality 70 (Default is 95) - Huge bandwidth/latency saving
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                ret, buffer = cv2.imencode('.jpg', annotated_frame, encode_param)
                 if ret:
                     jpg_bytes = buffer.tobytes()
                     # Update Shared State

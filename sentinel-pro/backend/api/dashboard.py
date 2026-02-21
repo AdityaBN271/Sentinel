@@ -16,7 +16,7 @@ def generate_frames():
         if frame_bytes:
             yield (b'--frame\r\n'
                    b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
-        time.sleep(0.04) # ~25 FPS
+        time.sleep(0.01) # Low latency attempt (~100 FPS cap, practical browser limit)
 
 @router.get("/vision/stream")
 def video_feed():
