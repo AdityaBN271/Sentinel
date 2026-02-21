@@ -25,7 +25,7 @@ async def lifespan(app: FastAPI):
     print("--- Sentinel-Pro Backend Starting ---")
     
     # Start Hub (Engines)
-    hub.start_engines()
+    asyncio.create_task(hub.start_engines())
     
     # Start Keep-Alive / Monitor Loop
     asyncio.create_task(hub.monitor_loop())

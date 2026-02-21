@@ -5,6 +5,7 @@ import HeatmapFn from '../components/Heatmap';
 import TrendAnalysisChart from '../components/TrendAnalysisChart';
 import PeakHourChart from '../components/PeakHourChart';
 import ErrorBoundary from '../components/ErrorBoundary';
+import PerformancePulse from '../components/PerformancePulse';
 
 // Ensure this matches your backend URL. If simple CORS is used, strict localhost:8000 is fine.
 const socket = io('http://localhost:8000');
@@ -21,7 +22,9 @@ function DashboardContent() {
     const [peakHourData, setPeakHourData] = useState([]);
     const [trendData, setTrendData] = useState([]);
     const [heatmapData, setHeatmapData] = useState(new Array(10).fill(0).map(() => new Array(10).fill(0)));
+    const [mapHeatmapData, setMapHeatmapData] = useState(new Array(10).fill(0).map(() => new Array(10).fill(0)));
     const [anomalyAlert, setAnomalyAlert] = useState(null);
+    const [viewMode, setViewMode] = useState('camera'); // 'camera' or 'map'
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -34,25 +37,34 @@ function DashboardContent() {
         socket.on('state_update', (data) => {
             setMetrics(data);
 
-            // Update Heatmap
-            if (data.coordinates && data.coordinates.length > 0) {
-                // Simple grid mapping 10x10
-                const newGrid = new Array(10).fill(0).map(() => new Array(10).fill(0));
-                data.coordinates.forEach(coord => {
-                    const x = Math.floor(coord.x * 10); // 0-9
-                    const y = Math.floor(coord.y * 10); // 0-9
-                    if (x >= 0 && x < 10 && y >= 0 && y < 10) {
-                        newGrid[y][x] += 1;
+            // Update Camera Heatmap
+            const newCameraGrid = new Array(10).fill(0).map(() => new Array(10).fill(0));
+            // Update Map Heatmap
+            const newMapGrid = new Array(10).fill(0).map(() => new Array(10).fill(0));
+
+            data.coordinates.forEach(coord => {
+                // Camera Grid Mapping
+                const cx = Math.floor(coord.x * 10);
+                const cy = Math.floor(coord.y * 10);
+                if (cx >= 0 && cx < 10 && cy >= 0 && cy < 10) {
+                    newCameraGrid[cy][cx] += 1;
+                }
+
+                // Map Grid Mapping (if available)
+                if (coord.map_x !== undefined && coord.map_y !== undefined) {
+                    const mx = Math.floor(coord.map_x * 10);
+                    const my = Math.floor(coord.map_y * 10);
+                    if (mx >= 0 && mx < 10 && my >= 0 && my < 10) {
+                        newMapGrid[my][mx] += 1;
                     }
-                });
-                setHeatmapData(newGrid);
-            }
+                }
+            });
+            setHeatmapData(newCameraGrid);
+            setMapHeatmapData(newMapGrid);
 
             // Anomaly Check (Simple client-side check for MVP)
-            // In real app, backend sends specific alert event
             if (data.risk_level === 'DANGER' || data.risk_level === 'WARN') {
                 setAnomalyAlert(`High Density Alert! Risk: ${data.risk_level}`);
-                // Auto dismiss after 5s
                 setTimeout(() => setAnomalyAlert(null), 5000);
             }
         });
@@ -127,6 +139,11 @@ function DashboardContent() {
             <nav className="dashboard-nav">
                 <h2>Sentinel Pro Dashboard</h2>
                 <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                    <PerformancePulse
+                        fps={metrics.fps}
+                        vram={metrics.vram_usage}
+                        device={metrics.inference_device}
+                    />
                     <span>Status: <b style={{ color: getRiskColor(metrics.risk_level) }}>{metrics.risk_level}</b></span>
                     <button onClick={() => navigate('/calibrate')} className="logout-btn" style={{ background: '#3b82f6' }}>Configure</button>
                     <button onClick={handleLogout} className="logout-btn">Logout</button>
@@ -180,8 +197,18 @@ function DashboardContent() {
                     </div>
 
                     <div className="metric-card" style={{ background: '#1e293b', padding: '1rem', borderRadius: '0.5rem' }}>
-                        <h4 style={{ margin: '0 0 0.5rem 0', color: '#94a3b8' }}>Crowd Heatmap</h4>
-                        <HeatmapFn xLabels={new Array(10).fill('')} yLabels={new Array(10).fill('')} data={heatmapData} />
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                            <h4 style={{ margin: 0, color: '#94a3b8' }}>{viewMode === 'camera' ? 'Camera Heatmap' : 'Floor Plan Heatmap'}</h4>
+                            <select
+                                value={viewMode}
+                                onChange={(e) => setViewMode(e.target.value)}
+                                style={{ background: '#334155', color: 'white', border: 'none', borderRadius: '4px', fontSize: '0.75rem', padding: '0.2rem' }}
+                            >
+                                <option value="camera">Camera View</option>
+                                <option value="map">Map View</option>
+                            </select>
+                        </div>
+                        <HeatmapFn xLabels={new Array(10).fill('')} yLabels={new Array(10).fill('')} data={viewMode === 'camera' ? heatmapData : mapHeatmapData} />
                     </div>
 
                     <div className="metric-card" style={{ background: '#1e293b', padding: '1rem', borderRadius: '0.5rem' }}>

@@ -3,9 +3,10 @@ import asyncio
 import time
 import json
 from engine.shared_state import state
+from sqlalchemy import select
 from .serial_bridge import ArduinoBridge
 from backend.api.deps import AsyncSessionLocal
-from backend.db.models import CrowdLog
+from backend.db.models import CrowdLog, SystemConfig
 
 class SentinelHub:
     def __init__(self):
@@ -21,8 +22,21 @@ class SentinelHub:
         self.vision_engine = VisionEngine(source=None) # Use env var or default to 0
         self.audio_engine = AudioEngine()
 
-    def start_engines(self):
+    async def start_engines(self):
         print("[Hub] Starting Engines...")
+        
+        # Load calibration from DB
+        try:
+            async with AsyncSessionLocal() as session:
+                result = await session.execute(select(SystemConfig).where(SystemConfig.key == "homography_matrix"))
+                entry = result.scalar_one_or_none()
+                if entry:
+                    h_list = json.loads(entry.value)
+                    self.update_homography_matrix(h_list)
+                    print("[Hub] Loaded Calibration from DB")
+        except Exception as e:
+            print(f"[Hub] Error loading calibration: {e}")
+
         if not self.vision_engine.is_alive():
             self.vision_engine.start()
         if not self.audio_engine.is_alive():

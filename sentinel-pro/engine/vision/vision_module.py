@@ -4,14 +4,55 @@ import time
 import queue
 import os
 import numpy as np
+import torch
 from ultralytics import YOLO
 from engine.shared_state import state
-from backend.core.config import YOLO_MODEL, CROWD_DENSITY_HIGH, CROWD_DENSITY_MEDIUM, IMG_SIZE
+import backend.core.config as config
+
+class ThreadedStream:
+    def __init__(self, source):
+        # On Windows, using CAP_DSHOW can sometimes verify webcam access better for index 0
+        if isinstance(source, int):
+            self.cap = cv2.VideoCapture(source, cv2.CAP_DSHOW)
+        else:
+            self.cap = cv2.VideoCapture(source)
+            
+        if not self.cap.isOpened():
+            raise Exception(f"Could not open video source {source}")
+            
+        self.q = queue.Queue(maxsize=1) # Minimal buffer for zero lag
+        self.running = True
+        self.thread = threading.Thread(target=self._update, daemon=True)
+        self.thread.start()
+
+    def _update(self):
+        while self.running:
+            ret, frame = self.cap.read()
+            if not ret:
+                self.running = False
+                break
+            if not self.q.empty():
+                try:
+                    self.q.get_nowait() # Discard old frame
+                except queue.Empty:
+                    pass
+            self.q.put(frame)
+
+    def read(self):
+        try:
+            return True, self.q.get(timeout=1.0)
+        except queue.Empty:
+            return False, None
+
+    def release(self):
+        self.running = False
+        if self.cap.isOpened():
+            self.cap.release()
 
 class VisionEngine(threading.Thread):
     def __init__(self, source=None):
         super().__init__()
-        # Use env var if source not provided, parse as int if digit (webcam), else string (RTSP)
+        # Use env var if source not provided
         if source is None:
             env_source = os.getenv("CAMERA_SOURCE", "0")
             if env_source.isdigit():
@@ -21,11 +62,21 @@ class VisionEngine(threading.Thread):
         else:
             self.source = source
             
+        # Mission V6: Hardware Awareness
+        self.cuda_available = torch.cuda.is_available()
+        self.device_str = '0' if self.cuda_available else 'cpu'
+        self.half_precision = self.cuda_available # FP16 on GPU
+        self.inference_imgsz = 1080 if self.cuda_available else 480
+        
+        print(f"[VisionEngine] Mission V6 Hardware: {'GPU (RTX)' if self.cuda_available else 'CPU (HP)'}")
+        print(f"[VisionEngine] Settings: Device={self.device_str}, imgsz={self.inference_imgsz}, half={self.half_precision}")
+
         self.running = False
         self.model = None
-        self.frame_queue = queue.Queue(maxsize=1) # Keep only latest frame
-        self.capture_thread = None
-        self.homography_matrix = None # Numpy array for coord transformation
+        self.homography_matrix = None 
+        self.last_fps_time = time.time()
+        self.frame_count = 0
+        self.stream = None
 
     def set_homography(self, matrix_list):
         try:
@@ -34,164 +85,106 @@ class VisionEngine(threading.Thread):
         except Exception as e:
             print(f"[VisionEngine] Error setting homography: {e}")
 
-    def capture_loop(self):
-        """Producer: Reads frames as fast as possible."""
-        while self.running:
-            print(f"[VisionEngine] Attempting to open Source: {self.source}")
-            
-            # On Windows, using CAP_DSHOW can sometimes verify webcam access better for index 0
-            if isinstance(self.source, int):
-                cap = cv2.VideoCapture(self.source, cv2.CAP_DSHOW)
-            else:
-                cap = cv2.VideoCapture(self.source)
-            
-            if not cap.isOpened():
-                print(f"[VisionEngine] ERROR: Could not open source {self.source}. Retrying in 5s...")
-                time.sleep(5)
-                continue
-            
-            print(f"[VisionEngine] Source {self.source} opened successfully.")
-            
-            while self.running and cap.isOpened():
-                ret, frame = cap.read()
-                if not ret:
-                    print("[VisionEngine] WARN: Failed to read frame (stream ended or disconnected). Reconnecting...")
-                    break
-                
-                # Put frame in queue (drop old if full)
-                if self.frame_queue.full():
-                    try:
-                        self.frame_queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                
-                self.frame_queue.put(frame)
-                
-                # Sleep slightly to prevent CPU hogging if source is very fast (optional)
-                # time.sleep(0.001)
-
-            cap.release()
-            print("[VisionEngine] Capture stopped or disconnected.")
-            
-            if self.running:
-                print("[VisionEngine] Waiting 2s before retry...")
-                time.sleep(2)
-
     def run(self):
-        """Consumer: Inference Loop"""
-        print(f"[VisionEngine] Loading Model (TensorRT preferred): {YOLO_MODEL}")
-        
-        # Check for TensorRT engine
-        model_path = YOLO_MODEL
-        if YOLO_MODEL.endswith('.pt'):
-            engine_path = YOLO_MODEL.replace('.pt', '.engine')
-            # Logic to check if engine exists would go here
-            # model_path = engine_path if os.path.exists(engine_path) else YOLO_MODEL
-        
-        self.model = YOLO(model_path)
+        """Unified Inference Loop V6"""
+        print(f"[VisionEngine] Loading Model: {config.YOLO_MODEL}")
+        try:
+            self.model = YOLO(config.YOLO_MODEL)
+            self.model.to(self.device_str)
+        except Exception as e:
+            print(f"[VisionEngine] Fatal Error loading model: {e}")
+            return
+
+        print(f"[VisionEngine] Starting ThreadedStream on {self.source}")
+        try:
+            self.stream = ThreadedStream(self.source)
+        except Exception as e:
+            print(f"[VisionEngine] Stream Error: {e}")
+            return
+
         self.running = True
         
-        # Start Producer
-        self.capture_thread = threading.Thread(target=self.capture_loop, daemon=True)
-        self.capture_thread.start()
-        
-        frame_counter = 0
-        
-        
         while self.running:
-            try:
-                # ZERO LAG Stratey: Drain queue to get the absolute latest frame
-                frame = None
-                try:
-                    while True:
-                        frame = self.frame_queue.get_nowait()
-                except queue.Empty:
-                    pass
+            ret, frame = self.stream.read()
+            if not ret:
+                print("[VisionEngine] Capture stopped or disconnected.")
+                break
+
+            # Metrics Tracking (V6 System Pulse)
+            self.frame_count += 1
+            now = time.time()
+            if now - self.last_fps_time >= 1.0:
+                fps = self.frame_count / (now - self.last_fps_time)
+                vram = 0
+                if self.cuda_available:
+                    vram = torch.cuda.memory_reserved(0) / 1024**2 # MB
                 
-                # If we didn't get a frame (queue was empty), wait for one
-                if frame is None:
-                    frame = self.frame_queue.get(timeout=1.0)
-
-            except queue.Empty:
-                continue
-
-            frame_counter += 1
-            
-            # Frame Skipping (Every 2nd frame)
-            if frame_counter % 2 != 0:
-                continue
+                state.update_metrics(round(fps, 1), round(vram, 1), "GPU" if self.cuda_available else "CPU")
+                self.frame_count = 0
+                self.last_fps_time = now
 
             try:
-                # Inference
-                results = self.model(frame, verbose=False, classes=[0], imgsz=IMG_SIZE, half=True)
+                # Inference with Mission V6 Adaptive Params
+                results = self.model.predict(
+                    source=frame,
+                    device=self.device_str,
+                    half=self.half_precision,
+                    imgsz=self.inference_imgsz,
+                    conf=config.CONF_THRESHOLD,
+                    iou=config.IOU_THRESHOLD,
+                    verbose=False,
+                    classes=[0] # Only persons
+                )
                 
                 person_count = 0
-                
                 for r in results:
                     person_count = len(r.boxes)
                 
-                # Draw Bounding Boxes on the frame
                 annotated_frame = results[0].plot()
 
-                # Coordinates for heatmap (centroids)
+                # Coordinate Mapping V6
                 coordinates = []
                 for r in results:
                     for box in r.boxes:
-                        # box.xywh returns center_x, center_y, width, height
                         x, y, w, h = box.xywh[0].tolist() 
-                        
-                        # Normalize coordinates (0-1) for heatmap grid
                         norm_x = x / frame.shape[1]
                         norm_y = y / frame.shape[0]
                         
                         coord_entry = {
-                            "x": norm_x, 
-                            "y": norm_y,
-                            "pixel_x": x,
-                            "pixel_y": y
+                            "x": norm_x, "y": norm_y,
+                            "pixel_x": x, "pixel_y": y
                         }
 
-                        # Apply Homography if available
                         if self.homography_matrix is not None:
-                            # perspectiveTransform expects shape (1, N, 2)
-                            pt = np.array([[[x, y]]], dtype=np.float32)
+                            pt = np.array([[[norm_x, norm_y]]], dtype=np.float32)
                             try:
                                 dst = cv2.perspectiveTransform(pt, self.homography_matrix)
-                                map_x = dst[0][0][0]
-                                map_y = dst[0][0][1]
-                                coord_entry["map_x"] = float(map_x)
-                                coord_entry["map_y"] = float(map_y)
-                            except Exception as e:
-                                print(f"Transform Error: {e}")
+                                coord_entry["map_x"] = float(dst[0][0][0])
+                                coord_entry["map_y"] = float(dst[0][0][1])
+                            except Exception:
+                                pass
 
                         coordinates.append(coord_entry)
 
-                # Determine Status
-                if person_count >= CROWD_DENSITY_HIGH:
-                    status = "HIGH"
-                elif person_count >= CROWD_DENSITY_MEDIUM:
-                    status = "MEDIUM"
+                # Determine Risk Level
+                if person_count >= config.CROWD_DENSITY_HIGH:
+                    risk = "DANGER"
+                elif person_count >= config.CROWD_DENSITY_MEDIUM:
+                    risk = "HIGH"
                 else:
-                    status = "LOW"
+                    risk = "NORMAL"
 
-                # Encode to JPEG for streaming
-                # Optimize: Quality 70 (Default is 95) - Huge bandwidth/latency saving
+                # Encode to JPEG
                 encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
                 ret, buffer = cv2.imencode('.jpg', annotated_frame, encode_param)
                 if ret:
-                    jpg_bytes = buffer.tobytes()
-                    # Update Shared State
-                    state.update_vision(jpg_bytes, person_count, status, coordinates)
+                    state.update_vision(buffer.tobytes(), person_count, risk, coordinates)
             
             except Exception as e:
-                print(f"[VisionEngine] Error during inference: {e}")
-                # Continue loop despite error
+                print(f"[VisionEngine] Inference Error: {e}")
                 continue
-            
-            # Log FPS (Optional)
-            # print(f"FPS: ...")
 
     def stop(self):
         self.running = False
-        if self.capture_thread:
-            self.capture_thread.join(timeout=1)
+        if self.stream:
+            self.stream.release()

@@ -10,7 +10,7 @@ load_dotenv(dotenv_path=env_path)
 YOLO_MODEL = "yolov8n-pose.pt"
 CONF_THRESHOLD = 0.25
 IOU_THRESHOLD = 0.45
-IMG_SIZE = 640
+IMG_SIZE = 320
 
 # --- Audio Config ---
 AUDIO_RATE = 22050
