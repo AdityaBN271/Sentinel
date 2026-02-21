@@ -14,6 +14,7 @@ class SharedState:
         self.fps = 0.0
         self.vram_usage = 0.0 # in MB
         self.inference_device = "CPU"
+        self.detections_buffer = [] # Buffer for database persistence
 
     def update_vision(self, frame_jpeg, count, risk, coordinates=[]):
         with self._lock:
@@ -22,6 +23,9 @@ class SharedState:
             self.risk_level = risk
             self.coordinates = coordinates
             self.last_update = time.time()
+            # Mission V7: Buffer for DB
+            if coordinates:
+                self.detections_buffer.extend(coordinates)
 
     def update_audio(self, status):
         with self._lock:
@@ -50,6 +54,13 @@ class SharedState:
     def get_frame(self):
         with self._lock:
             return self.latest_frame
+
+    def get_detections_to_persist(self):
+        """Pops all buffered detections for DB saving"""
+        with self._lock:
+            data = list(self.detections_buffer)
+            self.detections_buffer = []
+            return data
 
 # Global Singleton
 state = SharedState()

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, desc
-from backend.db.models import CrowdLog
+from sqlalchemy import select, func, desc, text
+from backend.db.models import CrowdLog, DetectionLog
 from backend.api.deps import get_db
 import datetime
 
@@ -88,3 +88,13 @@ async def get_trend_data(window_size: int = 5, db: AsyncSession = Depends(get_db
         })
         
     return data[-50:] # Return last 50 points for display
+
+@router.get("/heatmap/data")
+async def get_heatmap_data(limit: int = 1000, db: AsyncSession = Depends(get_db)):
+    """Fetch last 1000 detections for tactical heatmap"""
+    result = await db.execute(
+        select(DetectionLog).order_by(desc(DetectionLog.timestamp)).limit(limit)
+    )
+    detections = result.scalars().all()
+    # Return as list of dicts for frontend
+    return [{"x": d.x, "y": d.y, "map_x": d.map_x, "map_y": d.map_y} for d in detections]

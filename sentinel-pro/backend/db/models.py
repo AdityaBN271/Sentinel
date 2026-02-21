@@ -47,3 +47,26 @@ class SystemConfig(Base):
     key = Column(String, primary_key=True, index=True)
     value = Column(String) # Store as string, cast when reading
     description = Column(String, nullable=True)
+
+class DetectionLog(Base):
+    """Individual person detections for historical mapping"""
+    __tablename__ = "detection_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    x = Column(Float) # Normalized 0-1
+    y = Column(Float) # Normalized 0-1
+    map_x = Column(Float, nullable=True) # Mapped X
+    map_y = Column(Float, nullable=True) # Mapped Y
+    config_name = Column(String, default="default")
+
+class Calibration(Base):
+    """Library of saved homography matrices"""
+    __tablename__ = "calibrations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    matrix = Column(String) # JSON list
+    points = Column(String) # JSON list of the 4 points for fine-tuning
+    is_active = Column(Boolean, default=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

@@ -6,6 +6,7 @@ import TrendAnalysisChart from '../components/TrendAnalysisChart';
 import PeakHourChart from '../components/PeakHourChart';
 import ErrorBoundary from '../components/ErrorBoundary';
 import PerformancePulse from '../components/PerformancePulse';
+import TacticalHeatmap from '../components/TacticalHeatmap';
 
 // Ensure this matches your backend URL. If simple CORS is used, strict localhost:8000 is fine.
 const socket = io('http://localhost:8000');
@@ -23,6 +24,7 @@ function DashboardContent() {
     const [trendData, setTrendData] = useState([]);
     const [heatmapData, setHeatmapData] = useState(new Array(10).fill(0).map(() => new Array(10).fill(0)));
     const [mapHeatmapData, setMapHeatmapData] = useState(new Array(10).fill(0).map(() => new Array(10).fill(0)));
+    const [historicalDetections, setHistoricalDetections] = useState([]);
     const [anomalyAlert, setAnomalyAlert] = useState(null);
     const [viewMode, setViewMode] = useState('camera'); // 'camera' or 'map'
 
@@ -70,9 +72,25 @@ function DashboardContent() {
         });
 
         // Fetch Logs Initial and interval
+        const fetchHistoricalHeatmap = async () => {
+            try {
+                const response = await fetch('http://localhost:8000/api/analytics/heatmap/data?limit=1000', {
+                    headers: { 'Authorization': `Bearer ${token}` }
+                });
+                const data = await response.json();
+                setHistoricalDetections(data);
+            } catch (err) {
+                console.error("Error fetching historical heatmap:", err);
+            }
+        };
+
         fetchLogs();
         fetchAnalytics();
-        const interval = setInterval(fetchLogs, 5000);
+        fetchHistoricalHeatmap();
+        const interval = setInterval(() => {
+            fetchLogs();
+            fetchHistoricalHeatmap();
+        }, 5000);
 
         return () => {
             socket.off('connect');
@@ -208,7 +226,11 @@ function DashboardContent() {
                                 <option value="map">Map View</option>
                             </select>
                         </div>
-                        <HeatmapFn xLabels={new Array(10).fill('')} yLabels={new Array(10).fill('')} data={viewMode === 'camera' ? heatmapData : mapHeatmapData} />
+                        {viewMode === 'camera' ? (
+                            <HeatmapFn xLabels={new Array(10).fill('')} yLabels={new Array(10).fill('')} data={heatmapData} />
+                        ) : (
+                            <TacticalHeatmap detections={historicalDetections} />
+                        )}
                     </div>
 
                     <div className="metric-card" style={{ background: '#1e293b', padding: '1rem', borderRadius: '0.5rem' }}>

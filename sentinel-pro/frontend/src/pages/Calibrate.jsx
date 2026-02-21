@@ -1,12 +1,29 @@
-import React, { useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useRef, useEffect } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
 
 export default function Calibrate() {
     const navigate = useNavigate();
+    const location = useLocation();
     const [videoPoints, setVideoPoints] = useState([]);
     const [mapPoints, setMapPoints] = useState([]);
     const [mapImage, setMapImage] = useState(null);
+    const [name, setName] = useState('New Calibration');
     const [status, setStatus] = useState('');
+
+    useEffect(() => {
+        if (location.state?.calibration) {
+            const { calibration } = location.state;
+            try {
+                const points = JSON.parse(calibration.points);
+                setVideoPoints(points.camera || []);
+                setMapPoints(points.map || []);
+                setName(calibration.name);
+                setMapImage("/floor_plan.png");
+            } catch (err) {
+                console.error("Failed to parse calibration points", err);
+            }
+        }
+    }, [location.state]);
 
     const videoRef = useRef(null);
     const mapRef = useRef(null);
@@ -50,13 +67,14 @@ export default function Calibrate() {
 
         try {
             const token = localStorage.getItem('token');
-            const res = await fetch('http://localhost:8000/api/system/calibrate', {
+            const res = await fetch('http://localhost:8000/api/system/calibrations', {
                 method: 'POST',
                 headers: {
                     'Content-Type': 'application/json',
                     'Authorization': `Bearer ${token}`
                 },
                 body: JSON.stringify({
+                    name: name,
                     camera_points: videoPoints,
                     map_points: mapPoints
                 })
@@ -64,7 +82,7 @@ export default function Calibrate() {
 
             if (res.ok) {
                 setStatus('Success: Calibration saved!');
-                setTimeout(() => navigate('/dashboard'), 2000);
+                setTimeout(() => navigate('/configurations'), 2000);
             } else {
                 const err = await res.json();
                 setStatus(`Error: ${err.detail}`);
@@ -136,6 +154,16 @@ export default function Calibrate() {
                     {status}
                 </div>
             )}
+
+            <div style={{ marginBottom: '1.5rem', background: '#1e293b', padding: '1rem', borderRadius: '8px' }}>
+                <label style={{ display: 'block', marginBottom: '0.5rem', color: '#94a3b8', fontSize: '0.9rem' }}>Configuration Name</label>
+                <input
+                    type="text"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    style={{ background: '#0f172a', color: 'white', border: '1px solid #334155', padding: '0.5rem', borderRadius: '4px', width: '300px' }}
+                />
+            </div>
 
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '2rem' }}>
                 {/* Camera Feed */}

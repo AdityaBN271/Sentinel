@@ -3,12 +3,12 @@ import numpy as np
 import json
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, text
 from pydantic import BaseModel
 from typing import List
 
 from backend.api.deps import get_db
-from backend.db.models import SystemConfig
+from backend.db.models import SystemConfig, Calibration
 from backend.core.sentinel_hub import hub
 
 router = APIRouter()
@@ -18,6 +18,7 @@ class Point(BaseModel):
     y: float
 
 class CalibrationRequest(BaseModel):
+    name: str = "Last Calibration"
     camera_points: List[Point] # Points on video feed
     map_points: List[Point]    # Points on floor plan
 
@@ -62,3 +63,68 @@ async def get_config(db: AsyncSession = Depends(get_db)):
     result = await db.execute(select(SystemConfig))
     configs = result.scalars().all()
     return {c.key: c.value for c in configs}
+
+@router.post("/calibrations")
+async def save_named_calibration(data: CalibrationRequest, db: AsyncSession = Depends(get_db)):
+    """Save a named calibration to the library"""
+    if len(data.camera_points) != 4 or len(data.map_points) != 4:
+        raise HTTPException(status_code=400, detail="Exactly 4 points required")
+
+    src_pts = np.float32([[p.x, p.y] for p in data.camera_points])
+    dst_pts = np.float32([[p.x, p.y] for p in data.map_points])
+    H, _ = cv2.findHomography(src_pts, dst_pts)
+    
+    if H is None:
+        raise HTTPException(status_code=500, detail="Homography failed")
+
+    matrix_json = json.dumps(H.tolist())
+    points_json = json.dumps({
+        "camera": [p.dict() for p in data.camera_points],
+        "map": [p.dict() for p in data.map_points]
+    })
+
+    # Save to Calibration table
+    cal = Calibration(
+        name=data.name,
+        matrix=matrix_json,
+        points=points_json,
+        is_active=True # Set auto-active for simplicity or handle in separate call
+    )
+    
+    # Deactivate others if this is active
+    await db.execute(text("UPDATE calibrations SET is_active = FALSE"))
+    db.add(cal)
+    await db.commit()
+    
+    hub.update_homography_matrix(H.tolist())
+    return {"id": cal.id, "name": cal.name, "status": "saved"}
+
+@router.get("/calibrations")
+async def list_calibrations(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Calibration))
+    return result.scalars().all()
+
+@router.post("/calibrations/{id}/activate")
+async def activate_calibration(id: int, db: AsyncSession = Depends(get_db)):
+    # Deactivate all
+    await db.execute(text("UPDATE calibrations SET is_active = FALSE"))
+    
+    result = await db.execute(select(Calibration).where(Calibration.id == id))
+    cal = result.scalar_one_or_none()
+    if not cal:
+        raise HTTPException(status_code=404, detail="Calibration not found")
+    
+    cal.is_active = True
+    await db.commit()
+    
+    hub.update_homography_matrix(json.loads(cal.matrix))
+    return {"status": "activated", "name": cal.name}
+
+@router.delete("/calibrations/{id}")
+async def delete_calibration(id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Calibration).where(Calibration.id == id))
+    cal = result.scalar_one_or_none()
+    if cal:
+        await db.delete(cal)
+        await db.commit()
+    return {"status": "deleted"}

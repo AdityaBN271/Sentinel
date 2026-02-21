@@ -6,7 +6,7 @@ from engine.shared_state import state
 from sqlalchemy import select
 from .serial_bridge import ArduinoBridge
 from backend.api.deps import AsyncSessionLocal
-from backend.db.models import CrowdLog, SystemConfig
+from backend.db.models import CrowdLog, SystemConfig, DetectionLog, Calibration
 
 class SentinelHub:
     def __init__(self):
@@ -28,12 +28,21 @@ class SentinelHub:
         # Load calibration from DB
         try:
             async with AsyncSessionLocal() as session:
-                result = await session.execute(select(SystemConfig).where(SystemConfig.key == "homography_matrix"))
-                entry = result.scalar_one_or_none()
-                if entry:
-                    h_list = json.loads(entry.value)
+                # Mission V7: Check for active calibration in new table first
+                result = await session.execute(select(Calibration).where(Calibration.is_active == True))
+                active_cal = result.scalar_one_or_none()
+                if active_cal:
+                    h_list = json.loads(active_cal.matrix)
                     self.update_homography_matrix(h_list)
-                    print("[Hub] Loaded Calibration from DB")
+                    print(f"[Hub] Loaded Active Calibration: {active_cal.name}")
+                else:
+                    # Fallback to legacy SystemConfig
+                    result = await session.execute(select(SystemConfig).where(SystemConfig.key == "homography_matrix"))
+                    entry = result.scalar_one_or_none()
+                    if entry:
+                        h_list = json.loads(entry.value)
+                        self.update_homography_matrix(h_list)
+                        print("[Hub] Loaded Legacy Calibration from DB")
         except Exception as e:
             print(f"[Hub] Error loading calibration: {e}")
 
@@ -97,6 +106,19 @@ class SentinelHub:
                         coordinates=json.dumps(snapshot.get('coordinates', []))
                     )
                     session.add(log)
+                    
+                    # Mission V7: Persist Individual Detections
+                    detections = state.get_detections_to_persist()
+                    if detections:
+                        for d in detections:
+                            log_entry = DetectionLog(
+                                x=d['x'],
+                                y=d['y'],
+                                map_x=d.get('map_x'),
+                                map_y=d.get('map_y')
+                            )
+                            session.add(log_entry)
+                    
                     await session.commit()
             
             # Hardware (Non-blocking)
