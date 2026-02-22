@@ -8,6 +8,8 @@ import torch
 from ultralytics import YOLO
 from engine.shared_state import state
 import backend.core.config as config
+from backend.core.spatial import is_point_in_polygon
+import json
 
 class ThreadedStream:
     def __init__(self, source):
@@ -62,14 +64,26 @@ class VisionEngine(threading.Thread):
         else:
             self.source = source
             
-        # Mission V6: Hardware Awareness
+        # Mission V11: Final Adaptive Hardware Profile
         self.cuda_available = torch.cuda.is_available()
-        self.device_str = '0' if self.cuda_available else 'cpu'
-        self.half_precision = self.cuda_available # FP16 on GPU
-        self.inference_imgsz = 1080 if self.cuda_available else 480
         
-        print(f"[VisionEngine] Mission V6 Hardware: {'GPU (RTX)' if self.cuda_available else 'CPU (HP)'}")
-        print(f"[VisionEngine] Settings: Device={self.device_str}, imgsz={self.inference_imgsz}, half={self.half_precision}")
+        if self.cuda_available:
+            # LENOVO PROFILE (RTX 2050)
+            self.device_str = '0'
+            self.half_precision = True
+            self.inference_imgsz = 1080
+            self.stream_quality = 70 # High detail
+            hw_tag = "Lenovo (RTX 2050)"
+        else:
+            # HP PROFILE (i5-1334U)
+            self.device_str = 'cpu'
+            self.half_precision = False
+            self.inference_imgsz = 480 # Force 640x480 (YOLO expands 480 to 640)
+            self.stream_quality = 50 # Lower to eliminate lag
+            hw_tag = "HP (i5-1334U)"
+        
+        print(f"[VisionEngine] V11 Hardware Active: {hw_tag}")
+        print(f"[VisionEngine] Profile: Device={self.device_str}, imgsz={self.inference_imgsz}, quality={self.stream_quality}%")
 
         self.running = False
         self.model = None
@@ -185,6 +199,26 @@ class VisionEngine(threading.Thread):
 
                         coordinates.append(coord_entry)
 
+                # Mission V11: Spatial Zone Occupancy Calculation (PiP)
+                zone_occupancy = {}
+                active_zones = state.active_zones # List of dicts with 'name' and 'polygon_data'
+                
+                # Zero out counts
+                for z in active_zones:
+                    zone_occupancy[z['name']] = 0
+
+                for coord in coordinates:
+                    if "map_x" in coord and "map_y" in coord:
+                        mx, my = coord["map_x"], coord["map_y"]
+                        for z in active_zones:
+                            try:
+                                poly = json.loads(z['polygon_data'])
+                                if is_point_in_polygon(mx, my, poly):
+                                    zone_occupancy[z['name']] += 1
+                                    coord["zone"] = z['name']
+                                    break # Person can only be in one zone (first match)
+                            except: continue
+
                 # Determine Risk Level
                 if person_count >= config.CROWD_DENSITY_HIGH:
                     risk = "DANGER"
@@ -193,11 +227,11 @@ class VisionEngine(threading.Thread):
                 else:
                     risk = "NORMAL"
 
-                # Encode to JPEG
-                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), 70]
+                # Encode to JPEG with Adaptive V11 Quality
+                encode_param = [int(cv2.IMWRITE_JPEG_QUALITY), self.stream_quality]
                 ret, buffer = cv2.imencode('.jpg', annotated_frame, encode_param)
                 if ret:
-                    state.update_vision(buffer.tobytes(), person_count, risk, coordinates)
+                    state.update_vision(buffer.tobytes(), person_count, risk, coordinates, zone_occupancy)
             
             except Exception as e:
                 print(f"[VisionEngine] Inference Error: {e}")

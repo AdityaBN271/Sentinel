@@ -70,3 +70,26 @@ class Calibration(Base):
     points = Column(String) # JSON list of the 4 points for fine-tuning
     is_active = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Volunteer(Base):
+    """Volunteer staff management"""
+    __tablename__ = "volunteers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, nullable=False)
+    phone = Column(String, nullable=False)
+    role = Column(String, default="Marshall")
+    assigned_zone = Column(String, nullable=True)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class Zone(Base):
+    """SVG Spatial Zones for occupancy tracking"""
+    __tablename__ = "zones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String, unique=True, index=True)
+    polygon_data = Column(String) # JSON list of [[x,y], [x,y]...]
+    capacity = Column(Integer, default=50)
+    alert_threshold = Column(Integer, default=80) # Percentage
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

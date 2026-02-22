@@ -12,16 +12,17 @@ class SharedState:
         self.zones = {} # Example: {"zone1": 5, "zone2": 10}
         self.coordinates = [] # List of {"x": float, "y": float}
         self.fps = 0.0
-        self.vram_usage = 0.0 # in MB
         self.inference_device = "CPU"
+        self.active_zones = [] # List of Zone objects/dicts with polygon_data
         self.detections_buffer = [] # Buffer for database persistence
 
-    def update_vision(self, frame_jpeg, count, risk, coordinates=[]):
+    def update_vision(self, frame_jpeg, count, risk, coordinates=[], zone_counts={}):
         with self._lock:
             self.latest_frame = frame_jpeg
             self.people_count = count
             self.risk_level = risk
             self.coordinates = coordinates
+            self.zones = zone_counts
             self.last_update = time.time()
             # Mission V7: Buffer for DB
             if coordinates:
@@ -48,6 +49,7 @@ class SharedState:
                 "fps": self.fps,
                 "vram_usage": self.vram_usage,
                 "inference_device": self.inference_device,
+                "zones": self.zones,
                 "last_update": self.last_update
             }
 

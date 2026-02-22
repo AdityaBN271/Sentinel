@@ -27,6 +27,7 @@ CROWD_DENSITY_MEDIUM = 3
 # --- Hardware Config ---
 ARDUINO_PORT = "COM3"
 ARDUINO_BAUD = 9600
+FAST2SMS_API_KEY = os.getenv("FAST2SMS_API_KEY", "YOUR_FAST2SMS_API_KEY")
 
 # --- Paths ---
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

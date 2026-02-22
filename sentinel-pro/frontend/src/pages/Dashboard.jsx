@@ -27,6 +27,20 @@ function DashboardContent() {
     const [historicalDetections, setHistoricalDetections] = useState([]);
     const [anomalyAlert, setAnomalyAlert] = useState(null);
     const [viewMode, setViewMode] = useState('camera'); // 'camera' or 'map'
+    const [zones, setZones] = useState([]);
+
+    useEffect(() => {
+        const fetchZones = async () => {
+            try {
+                const res = await fetch('http://localhost:8000/api/zones/', {
+                    headers: { 'Authorization': `Bearer ${localStorage.getItem('token')}` }
+                });
+                const data = await res.json();
+                setZones(data);
+            } catch (e) { console.error("Error fetching zones", e); }
+        };
+        fetchZones();
+    }, []);
 
     useEffect(() => {
         const token = localStorage.getItem('token');
@@ -170,7 +184,9 @@ function DashboardContent() {
                         device={metrics.inference_device}
                     />
                     <span>Status: <b style={{ color: getRiskColor(metrics.risk_level) }}>{metrics.risk_level}</b></span>
-                    <button onClick={() => navigate('/library')} className="logout-btn" style={{ background: '#3b82f6' }}>Library</button>
+                    <button onClick={() => navigate('/zones')} className="logout-btn" style={{ background: '#3b82f6' }}>Zones</button>
+                    <button onClick={() => navigate('/volunteers')} className="logout-btn" style={{ background: '#3b82f6' }}>Staff</button>
+                    <button onClick={() => navigate('/library')} className="logout-btn" style={{ background: '#1e293b' }}>Library</button>
                     <button onClick={handleLogout} className="logout-btn">Logout</button>
                 </div>
             </nav>
@@ -178,6 +194,48 @@ function DashboardContent() {
             <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: '2rem' }}>
                 {/* Left Col: Video & Trend */}
                 <div className="left-panel" style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+
+                    {/* Mission V11: Live Occupancy Table */}
+                    <div className="card-panel" style={{ background: '#1e293b', padding: '1.5rem', borderRadius: '0.5rem' }}>
+                        <h3 style={{ marginBottom: '1.5rem', color: '#94a3b8' }}>Live Spatial Occupancy</h3>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', textAlign: 'left' }}>
+                            <thead>
+                                <tr style={{ borderBottom: '1px solid #334155', color: '#64748b', fontSize: '0.8rem' }}>
+                                    <th style={{ padding: '0.5rem' }}>ZONE</th>
+                                    <th>COUNT</th>
+                                    <th>CAPACITY</th>
+                                    <th>STATUS</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {zones.map(z => {
+                                    const count = metrics.zones ? (metrics.zones[z.name] || 0) : 0;
+                                    const density = (count / z.capacity) * 100;
+                                    let statusColor = '#22c55e'; // Green
+                                    if (density > z.alert_threshold) statusColor = '#ef4444'; // Red
+                                    else if (density > 50) statusColor = '#f59e0b'; // Yellow
+
+                                    return (
+                                        <tr key={z.id} style={{ borderBottom: '1px solid #1e293b', height: '3.5rem' }}>
+                                            <td style={{ padding: '0.5rem', fontWeight: 'bold' }}>{z.name}</td>
+                                            <td style={{ fontSize: '1.2rem' }}>{count}</td>
+                                            <td style={{ color: '#64748b' }}>{z.capacity}</td>
+                                            <td>
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                    <div style={{ width: '12px', height: '12px', borderRadius: '50%', background: statusColor, boxShadow: `0 0 8px ${statusColor}` }} />
+                                                    <span style={{ color: statusColor, fontSize: '0.8rem', fontWeight: 'bold' }}>
+                                                        {density > z.alert_threshold ? 'DANGER' : (density > 50 ? 'CROWDED' : 'OPTIMAL')}
+                                                    </span>
+                                                </div>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                                {zones.length === 0 && <tr><td colSpan="4" style={{ textAlign: 'center', padding: '1rem', color: '#64748b' }}>No zones defined. Go to 'Zones' to add.</td></tr>}
+                            </tbody>
+                        </table>
+                    </div>
+
                     <div className="card-panel">
                         <h3 style={{ marginBottom: '1rem' }}>Live Surveillance Feed</h3>
                         <div className="video-container" style={{ overflow: 'hidden', borderRadius: '0.5rem', border: '1px solid #334155', background: '#000' }}>

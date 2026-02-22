@@ -10,7 +10,7 @@ from fastapi.middleware.cors import CORSMiddleware
 # Add sys path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from backend.api import auth, dashboard, analytics, system
+from backend.api import auth, dashboard, analytics, system, volunteers, zones, public
 from backend.core.sentinel_hub import hub
 from engine.vision.vision_module import VisionEngine
 from engine.audio.audio_module import AudioEngine
@@ -62,6 +62,9 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Auth"])
 app.include_router(dashboard.router, prefix="/api/dashboard", tags=["Dashboard"])
 app.include_router(analytics.router, prefix="/api/analytics", tags=["Analytics"])
 app.include_router(system.router, prefix="/api/system", tags=["System"])
+app.include_router(volunteers.router, prefix="/api/volunteers", tags=["Volunteers"])
+app.include_router(zones.router, prefix="/api/zones", tags=["Zones"])
+app.include_router(public.router, prefix="/api/public", tags=["Public Safety"])
 
 @app.get("/")
 def health_check():

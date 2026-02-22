@@ -4,6 +4,8 @@ import Register from './pages/Register';
 import Dashboard from './pages/Dashboard';
 import Calibrate from './pages/Calibrate';
 import ConfigurationLibrary from './pages/ConfigurationLibrary';
+import ZoneManager from './pages/ZoneManager';
+import VolunteerManager from './pages/VolunteerManager';
 import './App.css';
 
 function App() {
@@ -15,6 +17,8 @@ function App() {
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/calibrate" element={<Calibrate />} />
       <Route path="/library" element={<ConfigurationLibrary />} />
+      <Route path="/zones" element={<ZoneManager />} />
+      <Route path="/volunteers" element={<VolunteerManager />} />
       <Route path="/" element={<Navigate to="/login" replace />} />
     </Routes>
   );

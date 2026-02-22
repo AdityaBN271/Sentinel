@@ -6,7 +6,7 @@ from engine.shared_state import state
 from sqlalchemy import select
 from .serial_bridge import ArduinoBridge
 from backend.api.deps import AsyncSessionLocal
-from backend.db.models import CrowdLog, SystemConfig, DetectionLog, Calibration
+from backend.db.models import CrowdLog, SystemConfig, DetectionLog, Calibration, Zone
 
 class SentinelHub:
     def __init__(self):
@@ -69,6 +69,15 @@ class SentinelHub:
     async def monitor_loop(self):
         print("[Hub] Monitor Loop Started")
         while True:
+            # Mission V11: Sync Active Zones to State for Vision Engine PiP
+            try:
+                async with AsyncSessionLocal() as session:
+                    result = await session.execute(select(Zone))
+                    zone_list = result.scalars().all()
+                    state.active_zones = [{"name": z.name, "polygon_data": z.polygon_data, "capacity": z.capacity, "alert_threshold": z.alert_threshold} for z in zone_list]
+            except Exception as e:
+                print(f"[Hub] Zone Sync Error: {e}")
+
             snapshot = state.get_snapshot()
             
             # Anomaly Alert Logic (Compare current vs 5-min average)
