@@ -28,15 +28,17 @@ class CrowdLog(Base):
     incidents = relationship("Incident", back_populates="crowd_log")
 
 class Incident(Base):
-    """Critical alerts (Level 1)"""
+    """Critical alerts and SOS triggers"""
     __tablename__ = "incidents"
 
     id = Column(Integer, primary_key=True, index=True)
-    crowd_log_id = Column(Integer, ForeignKey("crowd_logs.id"))
+    crowd_log_id = Column(Integer, ForeignKey("crowd_logs.id"), nullable=True) # Optional for mobile SOS
+    session_id = Column(String, index=True, nullable=True) # Mobile session ID for SOS
     timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    alert_type = Column(String) # PANIC_AUDIO, HIGH_DENSITY, COMPOSITE
-    details = Column(String)
+    alert_type = Column(String) # PANIC_AUDIO, HIGH_DENSITY, COMPOSITE, SOS
+    details = Column(String, nullable=True)
     acknowledged = Column(Boolean, default=False)
+    is_resolved = Column(Boolean, default=False)
 
     crowd_log = relationship("CrowdLog", back_populates="incidents")
 
@@ -93,3 +95,4 @@ class Zone(Base):
     capacity = Column(Integer, default=50)
     alert_threshold = Column(Integer, default=80) # Percentage
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
