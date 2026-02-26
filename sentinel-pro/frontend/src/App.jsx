@@ -16,7 +16,7 @@ function App() {
       <Route path="/register" element={<Register />} />
       <Route path="/dashboard" element={<Dashboard />} />
       <Route path="/calibrate" element={<Calibrate />} />
-      <Route path="/library" element={<ConfigurationLibrary />} />
+      <Route path="/configurations" element={<ConfigurationLibrary />} />
       <Route path="/zones" element={<ZoneManager />} />
       <Route path="/volunteers" element={<VolunteerManager />} />
       <Route path="/" element={<Navigate to="/login" replace />} />

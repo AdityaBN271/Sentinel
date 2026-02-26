@@ -69,69 +69,72 @@ class SentinelHub:
     async def monitor_loop(self):
         print("[Hub] Monitor Loop Started")
         while True:
-            # Mission V11: Sync Active Zones to State for Vision Engine PiP
             try:
+                # Mission V11: Sync Active Zones to State for Vision Engine PiP
                 async with AsyncSessionLocal() as session:
                     result = await session.execute(select(Zone))
                     zone_list = result.scalars().all()
                     state.active_zones = [{"name": z.name, "polygon_data": z.polygon_data, "capacity": z.capacity, "alert_threshold": z.alert_threshold} for z in zone_list]
-            except Exception as e:
-                print(f"[Hub] Zone Sync Error: {e}")
 
-            snapshot = state.get_snapshot()
-            
-            # Anomaly Alert Logic (Compare current vs 5-min average)
-            # This is a simplified version; real logic would query DB for average
-            # For now, we compare against a static threshold or a simple running average if we had one.
-            # Let's assume an "Anomaly" if count jumps by > 5 in 1 second (burst) - simpler for now without DB queries in loop
-            
-            # Risk Logic
-            crowd_risk = snapshot['risk_level'] 
-            audio_status = snapshot['audio_status'] 
-            
-            final_risk = "SAFE"
-            if audio_status == "PANIC" and crowd_risk == "HIGH":
-                final_risk = "DANGER"
-            elif audio_status == "PANIC" or crowd_risk == "HIGH":
-                final_risk = "WARN"
-            elif crowd_risk == "MEDIUM":
-                final_risk = "WARN"
-            else:
+                snapshot = state.get_snapshot()
+                
+                # Anomaly Alert Logic (Compare current vs 5-min average)
+                # This is a simplified version; real logic would query DB for average
+                # For now, we compare against a static threshold or a simple running average if we had one.
+                # Let's assume an "Anomaly" if count jumps by > 5 in 1 second (burst) - simpler for now without DB queries in loop
+                
+                # Risk Logic
+                crowd_risk = snapshot['risk_level'] 
+                audio_status = snapshot['audio_status'] 
+                
                 final_risk = "SAFE"
-            
-            snapshot['risk_level'] = final_risk
-            
-            # Broadcast
-            await self.sio.emit('state_update', snapshot)
-            
-            # Log to DB every 5 seconds
-            if time.time() - self.last_log_time > 5:
-                self.last_log_time = time.time()
-                async with AsyncSessionLocal() as session:
-                    log = CrowdLog(
-                        person_count=snapshot['people_count'],
-                        risk_score=final_risk,
-                        zone_id="main",
-                        coordinates=json.dumps(snapshot.get('coordinates', []))
-                    )
-                    session.add(log)
-                    
-                    # Mission V7: Persist Individual Detections
-                    detections = state.get_detections_to_persist()
-                    if detections:
-                        for d in detections:
-                            log_entry = DetectionLog(
-                                x=d['x'],
-                                y=d['y'],
-                                map_x=d.get('map_x'),
-                                map_y=d.get('map_y')
-                            )
-                            session.add(log_entry)
-                    
-                    await session.commit()
-            
-            # Hardware (Non-blocking)
-            await asyncio.to_thread(self.arduino.send_command, f"RISK:{final_risk}")
+                if audio_status == "PANIC" and crowd_risk == "HIGH":
+                    final_risk = "DANGER"
+                elif audio_status == "PANIC" or crowd_risk == "HIGH":
+                    final_risk = "WARN"
+                elif crowd_risk == "MEDIUM":
+                    final_risk = "WARN"
+                else:
+                    final_risk = "SAFE"
+                
+                snapshot['risk_level'] = final_risk
+                
+                # Broadcast
+                await self.sio.emit('state_update', snapshot)
+                if snapshot.get('people_count', 0) > 0:
+                    print(f"[Hub] Emitted state_update: {snapshot['people_count']} people, {len(snapshot.get('coordinates', []))} coords")
+                
+                # Log to DB every 5 seconds
+                if time.time() - self.last_log_time > 5:
+                    self.last_log_time = time.time()
+                    async with AsyncSessionLocal() as session:
+                        log = CrowdLog(
+                            person_count=snapshot['people_count'],
+                            risk_score=final_risk,
+                            zone_id="main",
+                            coordinates=json.dumps(snapshot.get('coordinates', []))
+                        )
+                        session.add(log)
+                        
+                        # Mission V7: Persist Individual Detections
+                        detections = state.get_detections_to_persist()
+                        if detections:
+                            for d in detections:
+                                log_entry = DetectionLog(
+                                    x=d['x'],
+                                    y=d['y'],
+                                    map_x=d.get('map_x'),
+                                    map_y=d.get('map_y')
+                                )
+                                session.add(log_entry)
+                        
+                        await session.commit()
+                
+                # Hardware (Non-blocking)
+                await asyncio.to_thread(self.arduino.send_command, f"RISK:{final_risk}")
+                
+            except Exception as e:
+                print(f"[Hub] Monitor Loop Error: {e}")
             
             await asyncio.sleep(0.5)
 

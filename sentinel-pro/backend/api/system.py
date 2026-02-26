@@ -84,16 +84,24 @@ async def save_named_calibration(data: CalibrationRequest, db: AsyncSession = De
     })
 
     # Save to Calibration table
-    cal = Calibration(
-        name=data.name,
-        matrix=matrix_json,
-        points=points_json,
-        is_active=True # Set auto-active for simplicity or handle in separate call
-    )
+    result = await db.execute(select(Calibration).where(Calibration.name == data.name))
+    cal = result.scalar_one_or_none()
+    
+    if cal:
+        cal.matrix = matrix_json
+        cal.points = points_json
+        cal.is_active = True
+    else:
+        cal = Calibration(
+            name=data.name,
+            matrix=matrix_json,
+            points=points_json,
+            is_active=True
+        )
+        db.add(cal)
     
     # Deactivate others if this is active
-    await db.execute(text("UPDATE calibrations SET is_active = FALSE"))
-    db.add(cal)
+    await db.execute(text("UPDATE calibrations SET is_active = FALSE WHERE name != :name"), {"name": data.name})
     await db.commit()
     
     hub.update_homography_matrix(H.tolist())

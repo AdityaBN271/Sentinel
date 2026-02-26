@@ -9,7 +9,12 @@ import PerformancePulse from '../components/PerformancePulse';
 import TacticalHeatmap from '../components/TacticalHeatmap';
 
 // Ensure this matches your backend URL. If simple CORS is used, strict localhost:8000 is fine.
-const socket = io('http://localhost:8000');
+// Ensure this matches your backend URL. 
+const socket = io('http://localhost:8000', {
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: 5
+});
 
 function DashboardContent() {
     const navigate = useNavigate();
@@ -49,9 +54,17 @@ function DashboardContent() {
         }
 
         // Socket Listener
-        socket.on('connect', () => console.log("Connected to WebSocket"));
+        socket.on('connect', () => console.log("✅ Dashboard: Connected to WebSocket"));
+        socket.on('connect_error', (err) => console.error("❌ Dashboard: Socket Connection Error:", err));
+        socket.on('disconnect', (reason) => console.warn("⚠️ Dashboard: Disconnected from WebSocket:", reason));
+
         socket.on('state_update', (data) => {
+            console.log("📥 Dashboard: Received state_update", data);
             setMetrics(data);
+
+            if (!data.coordinates || !Array.isArray(data.coordinates)) {
+                return;
+            }
 
             // Update Camera Heatmap
             const newCameraGrid = new Array(10).fill(0).map(() => new Array(10).fill(0));
@@ -59,22 +72,30 @@ function DashboardContent() {
             const newMapGrid = new Array(10).fill(0).map(() => new Array(10).fill(0));
 
             data.coordinates.forEach(coord => {
-                // Camera Grid Mapping
-                const cx = Math.floor(coord.x * 10);
-                const cy = Math.floor(coord.y * 10);
+                // Ensure coordinates are numbers
+                const nx = parseFloat(coord.x);
+                const ny = parseFloat(coord.y);
+
+                if (isNaN(nx) || isNaN(ny)) return;
+
+                // Camera Grid Mapping (0.0 to 1.0 -> 0 to 9)
+                const cx = Math.floor(nx * 10);
+                const cy = Math.floor(ny * 10);
+
                 if (cx >= 0 && cx < 10 && cy >= 0 && cy < 10) {
                     newCameraGrid[cy][cx] += 1;
                 }
 
                 // Map Grid Mapping (if available)
                 if (coord.map_x !== undefined && coord.map_y !== undefined) {
-                    const mx = Math.floor(coord.map_x * 10);
-                    const my = Math.floor(coord.map_y * 10);
+                    const mx = Math.floor(parseFloat(coord.map_x) * 10);
+                    const my = Math.floor(parseFloat(coord.map_y) * 10);
                     if (mx >= 0 && mx < 10 && my >= 0 && my < 10) {
                         newMapGrid[my][mx] += 1;
                     }
                 }
             });
+
             setHeatmapData(newCameraGrid);
             setMapHeatmapData(newMapGrid);
 
@@ -186,7 +207,7 @@ function DashboardContent() {
                     <span>Status: <b style={{ color: getRiskColor(metrics.risk_level) }}>{metrics.risk_level}</b></span>
                     <button onClick={() => navigate('/zones')} className="logout-btn" style={{ background: '#3b82f6' }}>Zones</button>
                     <button onClick={() => navigate('/volunteers')} className="logout-btn" style={{ background: '#3b82f6' }}>Staff</button>
-                    <button onClick={() => navigate('/library')} className="logout-btn" style={{ background: '#1e293b' }}>Library</button>
+                    <button onClick={() => navigate('/configurations')} className="logout-btn" style={{ background: '#1e293b' }}>Library</button>
                     <button onClick={handleLogout} className="logout-btn">Logout</button>
                 </div>
             </nav>

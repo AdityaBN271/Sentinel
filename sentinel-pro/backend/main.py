@@ -53,7 +53,6 @@ app.add_middleware(
 # The recommend pattern is to wrap FastAPI: socketio_app = socketio.ASGIApp(sio, app)
 # But main:app expects FastAPI instance for OpenAPI.
 # Let's mount at /socket.io
-app.mount("/ws", hub.app) # This might be tricky with path stripping
 # Standard way: Wrap the whole thing
 app_sio = socketio.ASGIApp(hub.sio, app)
 

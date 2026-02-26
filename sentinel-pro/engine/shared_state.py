@@ -12,6 +12,7 @@ class SharedState:
         self.zones = {} # Example: {"zone1": 5, "zone2": 10}
         self.coordinates = [] # List of {"x": float, "y": float}
         self.fps = 0.0
+        self.vram_usage = 0.0
         self.inference_device = "CPU"
         self.active_zones = [] # List of Zone objects/dicts with polygon_data
         self.detections_buffer = [] # Buffer for database persistence
